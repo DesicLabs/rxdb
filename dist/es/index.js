@@ -9,7 +9,7 @@ import SchemaCheckPlugin from './plugins/schema-check';
 Core.plugin(SchemaCheckPlugin);
 import ErrorMessagesPlugin from './plugins/error-messages';
 Core.plugin(ErrorMessagesPlugin);
-import ValidatePlugin from './plugins/validate';
+import ValidatePlugin from './plugins/validate-z-schema';
 Core.plugin(ValidatePlugin);
 import KeyCompressionPlugin from './plugins/key-compression';
 Core.plugin(KeyCompressionPlugin);

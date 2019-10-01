@@ -27,7 +27,7 @@ var _schemaCheck = _interopRequireDefault(require("./plugins/schema-check"));
 
 var _errorMessages = _interopRequireDefault(require("./plugins/error-messages"));
 
-var _validate = _interopRequireDefault(require("./plugins/validate"));
+var _validateZSchema = _interopRequireDefault(require("./plugins/validate-z-schema"));
 
 var _keyCompression = _interopRequireDefault(require("./plugins/key-compression"));
 
@@ -61,7 +61,7 @@ _core["default"].plugin(_schemaCheck["default"]);
 
 _core["default"].plugin(_errorMessages["default"]);
 
-_core["default"].plugin(_validate["default"]);
+_core["default"].plugin(_validateZSchema["default"]);
 
 _core["default"].plugin(_keyCompression["default"]);
 
