@@ -1,11 +1,11 @@
 {
-  "name": "rxdb",
+  "name": "@desiclabs/rxdb",
   "description": "A realtime Database for the Web",
   "version": "8.6.0",
-  "author": "pubkey",
+  "author": "desiclabs",
   "repository": {
     "type": "git",
-    "url": "https://github.com/pubkey/rxdb"
+    "url": "https://github.com/desiclabs/rxdb"
   },
   "homepage": "https://rxdb.info/",
   "keywords": [
