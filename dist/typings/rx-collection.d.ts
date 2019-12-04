@@ -1,3 +1,4 @@
+import { RxQueryBase } from './rx-query';
 import { RxChangeEvent } from './rx-change-event';
 import { DataMigrator } from './data-migrator';
 import { Crypter as CrypterClass } from './crypter';
@@ -44,12 +45,6 @@ export declare class RxCollectionBase<RxDocumentType = any, OrmMethods = {}> {
     _changeEventBuffer: ChangeEventBuffer;
     _keyCompressor?: any;
     /**
-     * merge the prototypes of schema, orm-methods and document-base
-     * so we do not have to assing getters/setters and orm methods to each document-instance
-     */
-    private _getDocumentPrototype?;
-    private _getDocumentConstructor?;
-    /**
      * only emits the change-events that change something with the documents
      */
     private __docChanges$?;
@@ -59,8 +54,6 @@ export declare class RxCollectionBase<RxDocumentType = any, OrmMethods = {}> {
     private _onDestroy?;
     private _onDestroyCall?;
     prepare(): Promise<[any, void[]]>;
-    getDocumentPrototype(): any;
-    getDocumentConstructor(): any;
     /**
      * checks if a migration is needed
      */
@@ -91,17 +84,13 @@ export declare class RxCollectionBase<RxDocumentType = any, OrmMethods = {}> {
     /**
      * wrapps pouch-find
      */
-    _pouchFind(rxQuery: RxQuery, limit?: number, noDecrypt?: boolean): Promise<any[]>;
-    /**
-     * create a RxDocument-instance from the jsonData
-     */
-    _createDocument(json: any): RxDocument;
-    /**
-     * create RxDocument from the docs-array
-     */
-    _createDocuments(docsJSON: any[]): Promise<RxDocument[]>;
+    _pouchFind(rxQuery: RxQuery | RxQueryBase, limit?: number, noDecrypt?: boolean): Promise<any[]>;
     $emit(changeEvent: RxChangeEvent): void;
     insert(json: RxDocumentType | RxDocument): Promise<RxDocument<RxDocumentType, OrmMethods>>;
+    bulkInsert(docsData: RxDocumentType[]): Promise<{
+        success: RxDocument<RxDocumentType, OrmMethods>[];
+        error: any[];
+    }>;
     /**
      * same as insert but overwrites existing document with same primary
      */
@@ -164,12 +153,6 @@ export declare class RxCollectionBase<RxDocumentType = any, OrmMethods = {}> {
     remove(): Promise<any>;
 }
 export declare function properties(): string[];
-/**
- * returns the prototype-object
- * that contains the orm-methods,
- * used in the proto-merge
- */
-export declare function getDocumentOrmPrototype(rxCollection: RxCollection): any;
 /**
  * creates and prepares a new collection
  */

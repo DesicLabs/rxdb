@@ -188,7 +188,7 @@ function sync(_ref) {
     retry: true
   } : _ref$options,
       query = _ref.query;
-  var useOptions = (0, _util.clone)(options); // prevent #641 by not allowing internal pouchdbs as remote
+  var useOptions = (0, _util.flatClone)(options); // prevent #641 by not allowing internal pouchdbs as remote
 
   if ((0, _pouchDb.isInstanceOf)(remote) && INTERNAL_POUCHDBS.has(remote)) {
     throw (0, _rxError.newRxError)('RC3', {
@@ -209,7 +209,7 @@ function sync(_ref) {
     });
   }
 
-  var syncFun = (0, _util.pouchReplicationFunction)(this.pouch, direction);
+  var syncFun = (0, _pouchDb.pouchReplicationFunction)(this.pouch, direction);
   if (query) useOptions.selector = query.keyCompress().selector;
   var repState = createRxReplicationState(this); // run internal so .sync() does not have to be async
 

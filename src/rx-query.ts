@@ -1,8 +1,7 @@
 import deepEqual from 'deep-equal';
 import {
     merge,
-    BehaviorSubject,
-    Subscription
+    BehaviorSubject
 } from 'rxjs';
 import {
     mergeMap,
@@ -15,8 +14,6 @@ import {
     massageSelector,
     rowFilter
 } from 'pouchdb-selector-core';
-
-
 import {
     MQuery,
     createMQuery
@@ -24,7 +21,8 @@ import {
 import {
     sortObject,
     stringifyFilter,
-    clone
+    clone,
+    pluginMissing
 } from './util';
 import {
     create as createQueryChangeDetector,
@@ -32,8 +30,7 @@ import {
 } from './query-change-detector';
 import {
     newRxError,
-    newRxTypeError,
-    pluginMissing
+    newRxTypeError
 } from './rx-error';
 import {
     runPluginHooks
@@ -45,6 +42,10 @@ import {
     RxQueryOP,
     RxQuery
 } from './types';
+
+import {
+    createRxDocuments
+} from './rx-document-prototype-merge';
 
 let _queryCount = 0;
 const newQueryID = function (): number {
@@ -122,7 +123,6 @@ export class RxQueryBase<RxDocumentType = any, RxQueryResult = RxDocumentType[] 
     }
     public id: number = newQueryID();
     public mquery: MQuery;
-    private _subs: Subscription[] = [];
 
     // stores the changeEvent-Number of the last handled change-event
     public _latestChangeEvent: -1 | any = -1;
@@ -198,7 +198,10 @@ export class RxQueryBase<RxDocumentType = any, RxQueryResult = RxDocumentType[] 
      */
     _setResultData(newResultData: any[]): RxDocument[] {
         this._resultsData = newResultData;
-        const docs = this.collection._createDocuments(this._resultsData);
+        const docs = createRxDocuments(
+            this.collection,
+            this._resultsData
+        );
         this._resultsDocs$.next(docs);
         return docs as any;
     }

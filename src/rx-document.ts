@@ -1,12 +1,19 @@
 import objectPath from 'object-path';
 import {
-    Observable
+    Observable,
+    BehaviorSubject
 } from 'rxjs';
+import {
+    distinctUntilChanged,
+    map
+} from 'rxjs/operators';
+
 import {
     clone,
     trimDots,
     getHeightOfRevision,
-    toPromise
+    toPromise,
+    pluginMissing
 } from './util';
 import {
     createChangeEvent,
@@ -14,20 +21,11 @@ import {
 } from './rx-change-event';
 import {
     newRxError,
-    newRxTypeError,
-    pluginMissing
+    newRxTypeError
 } from './rx-error';
 import {
     runPluginHooks
 } from './hooks';
-
-import {
-    BehaviorSubject
-} from 'rxjs';
-import {
-    distinctUntilChanged,
-    map
-} from 'rxjs/operators';
 
 import {
     RxDocument,
@@ -85,8 +83,8 @@ export const basePrototype = {
             case 'INSERT':
                 break;
             case 'UPDATE':
-                const newData = clone(changeEvent.data.v);
-                this._dataSync$.next(clone(newData));
+                const newData = changeEvent.data.v;
+                this._dataSync$.next(newData);
                 break;
             case 'REMOVE':
                 // remove from docCache to assure new upserted RxDocuments will be a new instance
@@ -275,7 +273,7 @@ export const basePrototype = {
     atomicUpdate(this: RxDocument, fun: Function): Promise<RxDocument> {
         this._atomicQueue = this._atomicQueue
             .then(() => {
-                const oldData = clone(this._dataSync$.getValue());
+                const oldData = this._dataSync$.getValue();
                 const ret = fun(clone(this._dataSync$.getValue()), this);
                 const retPromise = toPromise(ret);
                 return retPromise
@@ -296,7 +294,7 @@ export const basePrototype = {
      * and handles the events
      */
     _saveData(this: RxDocument, newData: any, oldData: any): Promise<void> {
-        newData = clone(newData);
+        newData = newData;
 
 
         // deleted documents cannot be changed
@@ -313,8 +311,7 @@ export const basePrototype = {
         return this.collection._runHooks('pre', 'save', newData, this)
             .then(() => {
                 this.collection.schema.validate(newData);
-
-                return this.collection._pouchPut(clone(newData));
+                return this.collection._pouchPut(newData);
             })
             .then(ret => {
                 if (!ret.ok) {
@@ -358,7 +355,7 @@ export const basePrototype = {
                 this.collection._docCache.set(this.primary, this);
 
                 // internal events
-                this._dataSync$.next(clone(this._data));
+                this._dataSync$.next(this._data);
 
                 return true;
             });
@@ -417,7 +414,7 @@ export function createRxDocumentConstructor(proto = basePrototype) {
         this._isTemporary = false;
 
         // assume that this is always equal to the doc-data in the database
-        this._dataSync$ = new BehaviorSubject(clone(jsonData));
+        this._dataSync$ = new BehaviorSubject(jsonData);
         this._deleted$ = new BehaviorSubject(false) as any;
 
         this._atomicQueue = Promise.resolve();

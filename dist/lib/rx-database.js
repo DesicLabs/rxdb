@@ -25,7 +25,7 @@ var _randomToken = _interopRequireDefault(require("random-token"));
 
 var _customIdleQueue = _interopRequireDefault(require("custom-idle-queue"));
 
-var _broadcastChannel = _interopRequireDefault(require("broadcast-channel"));
+var _broadcastChannel = require("broadcast-channel");
 
 var _util = require("./util");
 
@@ -317,7 +317,7 @@ function () {
 
     var _collections = arguments.length > 1 ? arguments[1] : undefined;
 
-    throw (0, _rxError.pluginMissing)('json-dump');
+    throw (0, _util.pluginMissing)('json-dump');
   }
   /**
    * import json
@@ -325,7 +325,7 @@ function () {
   ;
 
   _proto.importDump = function importDump(_json) {
-    throw (0, _rxError.pluginMissing)('json-dump');
+    throw (0, _util.pluginMissing)('json-dump');
   }
   /**
    * spawn server
@@ -333,7 +333,7 @@ function () {
   ;
 
   _proto.server = function server(_options) {
-    throw (0, _rxError.pluginMissing)('server');
+    throw (0, _util.pluginMissing)('server');
   }
   /**
    * destroys the database-instance and all collections
@@ -579,7 +579,7 @@ function _removeAllOfCollection(rxDatabase, collectionName) {
 
 function _prepareBroadcastChannel(rxDatabase) {
   // broadcastChannel
-  rxDatabase.broadcastChannel = new _broadcastChannel["default"]('RxDB:' + rxDatabase.name + ':' + 'socket');
+  rxDatabase.broadcastChannel = new _broadcastChannel.BroadcastChannel('RxDB:' + rxDatabase.name + ':' + 'socket');
   rxDatabase.broadcastChannel$ = new _rxjs.Subject();
 
   rxDatabase.broadcastChannel.onmessage = function (msg) {
@@ -632,7 +632,7 @@ function create(_ref2) {
       options = _ref2$options === void 0 ? {} : _ref2$options,
       _ref2$pouchSettings = _ref2.pouchSettings,
       pouchSettings = _ref2$pouchSettings === void 0 ? {} : _ref2$pouchSettings;
-  (0, _util.validateCouchDBString)(name); // check if pouchdb-adapter
+  (0, _pouchDb.validateCouchDBString)(name); // check if pouchdb-adapter
 
   if (typeof adapter === 'string') {
     // TODO make a function hasAdapter()
@@ -642,7 +642,7 @@ function create(_ref2) {
       });
     }
   } else {
-    (0, _util.isLevelDown)(adapter);
+    (0, _pouchDb.isLevelDown)(adapter);
 
     if (!_pouchDb.PouchDB.adapters || !_pouchDb.PouchDB.adapters.leveldb) {
       throw (0, _rxError.newRxError)('DB10', {

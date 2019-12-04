@@ -3,19 +3,15 @@
  * which should be easy to change
  */
 import randomToken from 'random-token';
-import { newRxError, newRxTypeError } from './rx-error';
 import { default as deepClone } from 'clone';
 
 /**
- * check if the given module is a leveldown-adapter
- * throws if not
+ * Returns an error that indicates that a plugin is missing
+ * We do not throw a RxError because this should not be handled
+ * programmatically but by using the correct import
  */
-export function isLevelDown(adapter) {
-  if (!adapter || typeof adapter.super_ !== 'function') {
-    throw newRxError('UT4', {
-      adapter: adapter
-    });
-  }
+export function pluginMissing(pluginKey) {
+  return new Error("You are using a function which must be overwritten by a plugin.\n        You should either prevent the usage of this function or add the plugin via:\n          - es5-require:\n            RxDB.plugin(require('rxdb/plugins/" + pluginKey + "'))\n          - es6-import:\n            import " + ucfirst(pluginKey) + "Plugin from 'rxdb/plugins/" + pluginKey + "';\n            RxDB.plugin(" + ucfirst(pluginKey) + "Plugin);\n        ");
 }
 /**
  * this is a very fast hashing but its unsecure
@@ -169,35 +165,6 @@ export function trimDots(str) {
   return str;
 }
 /**
- * validates that a given string is ok to be used with couchdb-collection-names
- * @link https://wiki.apache.org/couchdb/HTTP_database_API
- * @throws  {Error}
- */
-
-export function validateCouchDBString(name) {
-  if (typeof name !== 'string' || name.length === 0) {
-    throw newRxTypeError('UT1', {
-      name: name
-    });
-  } // do not check, if foldername is given
-
-
-  if (name.includes('/') || // unix
-  name.includes('\\') // windows
-  ) return true;
-  var regStr = '^[a-z][_$a-z0-9]*$';
-  var reg = new RegExp(regStr);
-
-  if (!name.match(reg)) {
-    throw newRxError('UT2', {
-      regex: regStr,
-      givenName: name
-    });
-  }
-
-  return true;
-}
-/**
  * deep-sort an object so its attributes are in lexical order.
  * Also sorts the arrays inside of the object if no-array-sort not set
  */
@@ -241,26 +208,6 @@ export function stringifyFilter(key, value) {
   return value;
 }
 /**
- * get the correct function-name for pouchdb-replication
- */
-
-export function pouchReplicationFunction(pouch, _ref) {
-  var _ref$pull = _ref.pull,
-      pull = _ref$pull === void 0 ? true : _ref$pull,
-      _ref$push = _ref.push,
-      push = _ref$push === void 0 ? true : _ref$push;
-  if (pull && push) return pouch.sync.bind(pouch);
-  if (!pull && push) return pouch.replicate.to.bind(pouch);
-  if (pull && !push) return pouch.replicate.from.bind(pouch);
-
-  if (!pull && !push) {
-    throw newRxError('UT3', {
-      pull: pull,
-      push: push
-    });
-  }
-}
-/**
  * get a random string which can be used with couchdb
  * @link http://stackoverflow.com/a/1349426/3443137
  */
@@ -286,6 +233,24 @@ export function shuffleArray(arr) {
   });
 }
 /**
+ * @link https://stackoverflow.com/a/15996017
+ */
+
+export function removeOneFromArrayIfMatches(ar, condition) {
+  ar = ar.slice();
+  var i = ar.length;
+  var done = false;
+
+  while (i-- && !done) {
+    if (condition(ar[i])) {
+      done = true;
+      ar.splice(i, 1);
+    }
+  }
+
+  return ar;
+}
+/**
  * transforms the given adapter into a pouch-compatible object
  */
 
@@ -309,6 +274,15 @@ function recursiveDeepCopy(o) {
 }
 
 export var clone = recursiveDeepCopy;
+/**
+ * does a flat copy on the objects,
+ * is about 3 times faster then using deepClone
+ * @link https://jsperf.com/object-rest-spread-vs-clone/2
+ */
+
+export function flatClone(obj) {
+  return Object.assign({}, obj);
+}
 import isElectron from 'is-electron';
 export var isElectronRenderer = isElectron();
 /**
@@ -325,9 +299,9 @@ export function flattenObject(ob) {
     if (typeof ob[i] === 'object') {
       var flatObject = flattenObject(ob[i]);
 
-      for (var x in flatObject) {
-        if (!flatObject.hasOwnProperty(x)) continue;
-        toReturn[i + '.' + x] = flatObject[x];
+      for (var _x in flatObject) {
+        if (!flatObject.hasOwnProperty(_x)) continue;
+        toReturn[i + '.' + _x] = flatObject[_x];
       }
     } else {
       toReturn[i] = ob[i];

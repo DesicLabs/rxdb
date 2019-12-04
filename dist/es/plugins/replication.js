@@ -5,10 +5,10 @@
 import PouchReplicationPlugin from 'pouchdb-replication';
 import { BehaviorSubject, Subject, fromEvent } from 'rxjs';
 import { skipUntil } from 'rxjs/operators';
-import { promiseWait, clone, pouchReplicationFunction } from '../util';
+import { promiseWait, flatClone } from '../util';
 import Core from '../core';
 import { newRxError } from '../rx-error';
-import { isInstanceOf as isInstanceOfPouchDB } from '../pouch-db';
+import { pouchReplicationFunction, isInstanceOf as isInstanceOfPouchDB } from '../pouch-db';
 import RxDBWatchForChangesPlugin from './watch-for-changes';
 import { isInstanceOf as isRxCollection } from '../rx-collection';
 // add pouchdb-replication-plugin
@@ -159,7 +159,7 @@ export function sync(_ref) {
     retry: true
   } : _ref$options,
       query = _ref.query;
-  var useOptions = clone(options); // prevent #641 by not allowing internal pouchdbs as remote
+  var useOptions = flatClone(options); // prevent #641 by not allowing internal pouchdbs as remote
 
   if (isInstanceOfPouchDB(remote) && INTERNAL_POUCHDBS.has(remote)) {
     throw newRxError('RC3', {

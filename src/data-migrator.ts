@@ -2,15 +2,20 @@
  * The DataMigrator handles the documents from collections with older schemas
  * and transforms/saves them into the newest collection
  */
-
+/**
+ * TODO this should be completely rewritten because:
+ * - The current implemetation does not use pouchdb'S bulkDocs which is much faster
+ * - This could have been done in much less code which would be easier to uderstand
+ *
+ */
 import {
-    PouchDB,
     countAllUndeleted,
     getBatch
 } from './pouch-db';
 import {
     clone,
-    toPromise
+    toPromise,
+    flatClone
 } from './util';
 
 import {
@@ -33,14 +38,14 @@ import {
 import {
     RxCollection,
     RxDatabase,
-    KeyFunctionMap,
     MigrationState,
     PouchDBInstance,
     NumberFunctionMap
 } from './types';
 
 import {
-    RxSchema
+    RxSchema,
+    getPreviousVersions
 } from './rx-schema';
 import {
     KeyCompressor
@@ -49,6 +54,11 @@ import {
     Crypter,
     create as createCrypter
 } from './crypter';
+
+import {
+    _handleToPouch,
+    _handleFromPouch
+} from './rx-collection-helper';
 
 export class DataMigrator {
 
@@ -90,7 +100,7 @@ export class DataMigrator {
          * @link https://github.com/ReactiveX/rxjs/issues/4074
          */
         (() => {
-            let oldCols: any[];
+            let oldCols: OldCollection[];
             return _getOldCollections(this)
                 .then(ret => {
                     oldCols = ret;
@@ -103,12 +113,15 @@ export class DataMigrator {
                     const totalCount: number = countAll
                         .reduce((cur, prev) => prev = cur + prev, 0);
                     state.total = totalCount;
-                    observer.next(clone(state));
+                    observer.next(flatClone(state));
                     let currentCol = oldCols.shift();
 
                     let currentPromise = Promise.resolve();
                     while (currentCol) {
-                        const migrationState$ = currentCol.migrate(batchSize);
+                        const migrationState$ = migrateOldCollection(
+                            currentCol,
+                            batchSize
+                        );
                         currentPromise = currentPromise.then(() => {
                             return new Promise(res => {
                                 const sub = migrationState$.subscribe(
@@ -116,7 +129,7 @@ export class DataMigrator {
                                         state.handled++;
                                         (state as any)[subState.type] = (state as any)[subState.type] + 1;
                                         state.percent = Math.round(state.handled / state.total * 100);
-                                        observer.next(clone(state));
+                                        observer.next(flatClone(state));
                                     },
                                     (e: any) => {
                                         sub.unsubscribe();
@@ -134,7 +147,7 @@ export class DataMigrator {
                 .then(() => {
                     state.done = true;
                     state.percent = 100;
-                    observer.next(clone(state));
+                    observer.next(flatClone(state));
                     observer.complete();
                 });
         })();
@@ -157,242 +170,49 @@ export class DataMigrator {
     }
 }
 
-class OldCollection {
-    constructor(
-        public version: number,
-        public schemaObj: any,
-        public dataMigrator: DataMigrator
-    ) {
-        this.newestCollection = dataMigrator.newestCollection;
-        this.database = dataMigrator.newestCollection.database;
-    }
-    get schema() {
-        if (!this._schema) {
-            //            delete this.schemaObj._id;
-            this._schema = createRxSchema(this.schemaObj, false);
-        }
-        return this._schema;
-    }
-    get keyCompressor(): KeyCompressor {
-        if (!this._keyCompressor)
-            this._keyCompressor = overwritable.createKeyCompressor(this.schema);
-        return this._keyCompressor as KeyCompressor;
-    }
-    get crypter() {
-        if (!this._crypter)
-            this._crypter = createCrypter(this.database.password, this.schema);
-        return this._crypter;
-    }
-    get pouchdb(): PouchDBInstance {
-        if (!this._pouchdb) {
-            this._pouchdb = this.database._spawnPouchDB(
-                this.newestCollection.name,
-                this.version,
-                this.newestCollection.pouchSettings
-            );
-        }
-        return this._pouchdb;
-    }
-    public newestCollection: RxCollection;
-    public database: RxDatabase;
-
-    private _schema?: RxSchema;
-
-    private _keyCompressor?: KeyCompressor;
-
-    private _crypter?: Crypter;
-
-    private _pouchdb?: PouchDBInstance;
-
-
-    /**
-     * runs the migration on all documents and deletes the pouchdb afterwards
-     */
-    private _migrate?: boolean;
-
-    private _migratePromise?: Promise<any>;
-
-    getBatch(batchSize: number) {
-        return getBatch(this.pouchdb, batchSize)
-            .then(docs => docs
-                .map(doc => this._handleFromPouch(doc))
-            );
-    }
-
-    /**
-     * handles a document from the pouchdb-instance
-     */
-    _handleFromPouch(docData: any) {
-        let data = clone(docData);
-        data = this.schema.swapIdToPrimary(docData);
-        if (this.schema.doKeyCompression())
-            data = this.keyCompressor.decompress(data);
-        data = this.crypter.decrypt(data);
-        return data;
-    }
-
-    /**
-     * wrappers for Pouch.put/get to handle keycompression etc
-     */
-    _handleToPouch(docData: any) {
-        let data = clone(docData);
-        data = this.crypter.encrypt(data);
-        data = this.schema.swapPrimaryToId(data);
-        if (this.schema.doKeyCompression())
-            data = this.keyCompressor.compress(data);
-        return data;
-    }
-
-    _runStrategyIfNotNull(version: number, docOrNull: any | null): Promise<object | null> {
-        if (docOrNull === null) return Promise.resolve(null);
-        const ret = (this.dataMigrator.migrationStrategies as any)[version + ''](docOrNull);
-        const retPromise = toPromise(ret);
-        return retPromise;
-    }
-
-    /**
-     * runs the doc-data through all following migrationStrategies
-     * so it will match the newest schema.
-     * @throws Error if final doc does not match final schema or migrationStrategy crashes
-     * @return final object or null if migrationStrategy deleted it
-     */
-    migrateDocumentData(docData: any): Promise<any | null> {
-        docData = clone(docData);
-        let nextVersion = this.version + 1;
-
-        // run the document throught migrationStrategies
-        let currentPromise = Promise.resolve(docData);
-        while (nextVersion <= this.newestCollection.schema.version) {
-            const version = nextVersion;
-            currentPromise = currentPromise.then(docOrNull => this._runStrategyIfNotNull(version, docOrNull));
-            nextVersion++;
-        }
-
-        return currentPromise.then(doc => {
-            if (doc === null) return Promise.resolve(null);
-
-            // check final schema
-            try {
-                this.newestCollection.schema.validate(doc);
-            } catch (e) {
-                throw newRxError('DM2', {
-                    fromVersion: this.version,
-                    toVersion: this.newestCollection.schema.version,
-                    finalDoc: doc
-                });
-            }
-            return doc;
-        });
-    }
-
-
-
-    /**
-     * transform docdata and save to new collection
-     * @return status-action with status and migrated document
-     */
-    _migrateDocument(doc: any): Promise<{ type: string, doc: {} }> {
-        const action = {
-            res: null,
-            type: '',
-            migrated: null,
-            doc,
-            oldCollection: this,
-            newestCollection: this.newestCollection
-        };
-        return this.migrateDocumentData(doc)
-            .then(migrated => {
-                action.migrated = migrated;
-                if (migrated) {
-                    runPluginHooks(
-                        'preMigrateDocument',
-                        action
-                    );
-
-                    // save to newest collection
-                    delete migrated._rev;
-                    return this.newestCollection._pouchPut(migrated, true)
-                        .then(res => {
-                            action.res = res;
-                            action.type = 'success';
-                            return runAsyncPluginHooks(
-                                'postMigrateDocument',
-                                action
-                            );
-                        });
-                } else action.type = 'deleted';
-            })
-            .then(() => {
-                // remove from old collection
-                return this.pouchdb.remove(this._handleToPouch(doc)).catch(() => { });
-            })
-            .then(() => action) as any;
-    }
-
-
-    /**
-     * deletes this.pouchdb and removes it from the database.collectionsCollection
-     */
-    delete(): Promise<void> {
-        return this
-            .pouchdb.destroy()
-            .then(() => this.database.removeCollectionDoc(this.dataMigrator.name, this.schema));
-    }
-    migrate(batchSize = 10): Observable<any> {
-        if (this._migrate)
-            throw newRxError('DM3');
-        this._migrate = true;
-
-        const observer = new Subject();
-
-        /**
-         * TODO this is a side-effect which might throw
-         * @see DataMigrator.migrate()
-         */
-        (() => {
-            let error: any;
-            const allBatchesDone = () => {
-                // remove this oldCollection
-                return this.delete()
-                    .then(() => observer.complete());
-            };
-            const handleOneBatch = () => {
-                return this.getBatch(batchSize)
-                    .then(batch => {
-                        if (batch.length === 0) {
-                            allBatchesDone();
-                            return false;
-                        } else {
-                            return Promise.all(
-                                batch.map(doc => this._migrateDocument(doc)
-                                    .then(action => observer.next(action))
-                                )
-                            ).catch(e => error = e).then(() => true);
-                        }
-                    })
-                    .then(next => {
-                        if (!next) return;
-                        if (error)
-                            observer.error(error);
-                        else handleOneBatch();
-                    });
-            };
-            handleOneBatch();
-        })();
-
-        return observer.asObservable();
-    }
-    migratePromise(batchSize: number): Promise<any> {
-        if (!this._migratePromise) {
-            this._migratePromise = new Promise((res, rej) => {
-                const state$ = this.migrate(batchSize);
-                state$['subscribe'](null, rej, res);
-            });
-        }
-        return this._migratePromise;
-    }
+export interface OldCollection {
+    version: number;
+    schema: RxSchema;
+    pouchdb: PouchDBInstance;
+    dataMigrator: DataMigrator;
+    _crypter: Crypter;
+    _keyCompressor?: KeyCompressor;
+    newestCollection: RxCollection;
+    database: RxDatabase;
+    _migrate?: boolean;
+    _migratePromise?: Promise<any>;
 }
 
+export function createOldCollection(
+    version: number,
+    schemaObj: any,
+    dataMigrator: DataMigrator
+): OldCollection {
+    const database = dataMigrator.newestCollection.database;
+    const schema = createRxSchema(schemaObj, false);
+    const ret: OldCollection = {
+        version,
+        dataMigrator,
+        newestCollection: dataMigrator.newestCollection,
+        database,
+        schema: createRxSchema(schemaObj, false),
+        pouchdb: database._spawnPouchDB(
+            dataMigrator.newestCollection.name,
+            version,
+            dataMigrator.newestCollection.pouchSettings
+        ),
+        _crypter: createCrypter(
+            database.password,
+            schema
+        )
+    };
+
+    if (schema.doKeyCompression()) {
+        ret._keyCompressor = overwritable.createKeyCompressor(schema);
+    }
+
+    return ret;
+}
 
 /**
  * get an array with OldCollection-instances from all existing old pouchdb-instance
@@ -402,13 +222,19 @@ export function _getOldCollections(
 ): Promise<OldCollection[]> {
     return Promise
         .all(
-            dataMigrator.currentSchema.previousVersions
+            getPreviousVersions(dataMigrator.currentSchema.jsonID)
                 .map(v => (dataMigrator.database._collectionsPouch as any).get(dataMigrator.name + '-' + v))
                 .map(fun => fun.catch(() => null)) // auto-catch so Promise.all continues
         )
         .then(oldColDocs => oldColDocs
             .filter(colDoc => colDoc !== null)
-            .map(colDoc => new OldCollection(colDoc.schema.version, colDoc.schema, dataMigrator))
+            .map(colDoc => {
+                return createOldCollection(
+                    colDoc.schema.version,
+                    colDoc.schema,
+                    dataMigrator
+                );
+            })
         );
 }
 
@@ -430,4 +256,200 @@ export function createDataMigrator(
     migrationStrategies: NumberFunctionMap
 ): DataMigrator {
     return new DataMigrator(newestCollection, migrationStrategies);
+}
+
+export function _runStrategyIfNotNull(
+    oldCollection: OldCollection,
+    version: number,
+    docOrNull: any | null
+): Promise<object | null> {
+    if (docOrNull === null) {
+        return Promise.resolve(null);
+    } else {
+        const ret = oldCollection.dataMigrator.migrationStrategies[version](docOrNull);
+        const retPromise = toPromise(ret);
+        return retPromise;
+    }
+}
+
+export function getBatchOfOldCollection(
+    oldCollection: OldCollection,
+    batchSize: number
+): Promise<any[]> {
+    return getBatch(oldCollection.pouchdb, batchSize)
+        .then(docs => docs
+            .map(doc => _handleFromPouch(oldCollection, doc))
+        );
+}
+
+/**
+ * runs the doc-data through all following migrationStrategies
+ * so it will match the newest schema.
+ * @throws Error if final doc does not match final schema or migrationStrategy crashes
+ * @return final object or null if migrationStrategy deleted it
+ */
+export function migrateDocumentData(
+    oldCollection: OldCollection,
+    docData: any
+): Promise<any | null> {
+    docData = clone(docData);
+    let nextVersion = oldCollection.version + 1;
+
+    // run the document throught migrationStrategies
+    let currentPromise = Promise.resolve(docData);
+    while (nextVersion <= oldCollection.newestCollection.schema.version) {
+        const version = nextVersion;
+        currentPromise = currentPromise.then(docOrNull => _runStrategyIfNotNull(
+            oldCollection,
+            version,
+            docOrNull
+        ));
+        nextVersion++;
+    }
+
+    return currentPromise.then(doc => {
+        if (doc === null) return Promise.resolve(null);
+
+        // check final schema
+        try {
+            oldCollection.newestCollection.schema.validate(doc);
+        } catch (e) {
+            throw newRxError('DM2', {
+                fromVersion: oldCollection.version,
+                toVersion: oldCollection.newestCollection.schema.version,
+                finalDoc: doc
+            });
+        }
+        return doc;
+    });
+}
+
+/**
+ * transform docdata and save to new collection
+ * @return status-action with status and migrated document
+ */
+export function _migrateDocument(
+    oldCollection: OldCollection,
+    doc: any
+): Promise<{ type: string, doc: {} }> {
+    const action = {
+        res: null,
+        type: '',
+        migrated: null,
+        doc,
+        oldCollection,
+        newestCollection: oldCollection.newestCollection
+    };
+    return migrateDocumentData(oldCollection, doc)
+        .then(migrated => {
+            action.migrated = migrated;
+            if (migrated) {
+                runPluginHooks(
+                    'preMigrateDocument',
+                    action
+                );
+
+                // save to newest collection
+                delete migrated._rev;
+                return oldCollection.newestCollection._pouchPut(migrated, true)
+                    .then(res => {
+                        action.res = res;
+                        action.type = 'success';
+                        return runAsyncPluginHooks(
+                            'postMigrateDocument',
+                            action
+                        );
+                    });
+            } else action.type = 'deleted';
+        })
+        .then(() => {
+            // remove from old collection
+            return oldCollection.pouchdb.remove(
+                _handleToPouch(oldCollection, doc)
+            ).catch(() => { });
+        })
+        .then(() => action) as any;
+}
+
+
+/**
+ * deletes this.pouchdb and removes it from the database.collectionsCollection
+ */
+export function deleteOldCollection(
+    oldCollection: OldCollection
+): Promise<void> {
+    return oldCollection
+        .pouchdb.destroy()
+        .then(
+            () => oldCollection.database.removeCollectionDoc(
+                oldCollection.dataMigrator.name,
+                oldCollection.schema
+            )
+        );
+}
+
+/**
+ * runs the migration on all documents and deletes the pouchdb afterwards
+ */
+export function migrateOldCollection(
+    oldCollection: OldCollection,
+    batchSize = 10
+): Observable<any> {
+    if (oldCollection._migrate) {
+        // already running
+        throw newRxError('DM3');
+    }
+    oldCollection._migrate = true;
+
+    const observer = new Subject();
+
+    /**
+     * TODO this is a side-effect which might throw
+     * @see DataMigrator.migrate()
+     */
+    (() => {
+        let error: any;
+        const allBatchesDone = () => {
+            // remove this oldCollection
+            return deleteOldCollection(oldCollection)
+                .then(() => observer.complete());
+        };
+        const handleOneBatch = () => {
+            return getBatchOfOldCollection(oldCollection, batchSize)
+                .then(batch => {
+                    if (batch.length === 0) {
+                        allBatchesDone();
+                        return false;
+                    } else {
+                        return Promise.all(
+                            batch.map(doc => _migrateDocument(oldCollection, doc)
+                                .then(action => observer.next(action))
+                            )
+                        ).catch(e => error = e).then(() => true);
+                    }
+                })
+                .then(next => {
+                    if (!next) return;
+                    if (error)
+                        observer.error(error);
+                    else handleOneBatch();
+                });
+        };
+        handleOneBatch();
+    })();
+
+    return observer.asObservable();
+}
+
+export function migratePromise(
+    oldCollection: OldCollection,
+    batchSize: number
+): Promise<any> {
+    if (!oldCollection._migratePromise) {
+        oldCollection._migratePromise = new Promise((res, rej) => {
+            const state$ = migrateOldCollection(oldCollection, batchSize);
+            state$['subscribe'](null, rej, res);
+        });
+    }
+    return oldCollection._migratePromise;
 }

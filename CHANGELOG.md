@@ -1,9 +1,46 @@
 # Changelog
 
-### X.X.X
+### 8.7.4 (2 December 2019)
+
+Other:
+  - Improved performance of `QueryChangeDetection` by using [array-push-at-sort-position](https://github.com/pubkey/array-push-at-sort-position) instead of re-sorting the whole results of a query
+  - Improved performance by removing unnecessary calls to deep-clone
+
+### 8.7.3 (10 November 2019)
+
+Features:
+  - Added `RxCollection.bulkInsert()`
+
+Bugfixes:
+  - Fix replication of migrated schemas in the server plugin
+
+### 8.7.2 (24 October 2019)
+
+Bugfixes:
+  - GraphQL replication sometimes not pushes when a big amount of documents has been pulled before
+  - Fixed typings of PouchdbReplicationOptions
+
+Other:
+  - Upgrade pouchdb to `7.1.1`
+  - Refactor some internals
+
+### 8.7.1 (18 October 2019)
+
+Other:
+  - Json-Import now uses `bulkDocs` for better performance
+  - Refactored prototype merging so it can be optimised later
+  - Moved some check into the check-plugin to optimize production build size
+  - Refactor schema-validation-plugins since sub-path validation is no longer needed
+
+### 8.7.0 (11 October 2019)
 
 Features:
   - RxDB server can now be used with an existing express-app. [#1448](https://github.com/pubkey/rxdb/issues/1448) Thanks [@dstudzinski](https://github.com/dstudzinski)
+  - Wrapped pouchdb conflict error into `RxError`
+
+Other:
+  - Fixed typings of `RxError` parameters
+  - Fix GraphQL-example to propper use Websocket-Pub-Sub
 
 ### 8.6.0 (4 October 2019)
 Migrated to typescript.

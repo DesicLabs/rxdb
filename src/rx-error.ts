@@ -2,10 +2,10 @@
  * here we use custom errors with the additional field 'parameters'
  */
 
-import {
-    ucfirst
-} from './util';
 import overwritable from './overwritable';
+import {
+    RxErrorParameters
+} from './types';
 
 /**
  * transform an object of parameters to a presentable string
@@ -44,12 +44,12 @@ function messageForError(
 export class RxError extends Error {
     public code: string;
     public message: string;
-    public parameters: any;
+    public parameters: RxErrorParameters;
     public rxdb: true;
     constructor(
         code: string,
         message: string,
-        parameters: any = {}
+        parameters: RxErrorParameters = {}
     ) {
         const mes = messageForError(message, parameters);
         super(mes);
@@ -72,12 +72,12 @@ export class RxError extends Error {
 export class RxTypeError extends TypeError {
     public code: string;
     public message: string;
-    public parameters: any;
+    public parameters: RxErrorParameters;
     public rxdb: true;
     constructor(
         code: string,
         message: string,
-        parameters: any = {}
+        parameters: RxErrorParameters = {}
     ) {
         const mes = messageForError(message, parameters);
         super(mes);
@@ -97,31 +97,12 @@ export class RxTypeError extends TypeError {
     }
 }
 
-
-export function pluginMissing(
-    pluginKey: string
-): RxError {
-    return new RxError(
-        'PU',
-        `You are using a function which must be overwritten by a plugin.
-        You should either prevent the usage of this function or add the plugin via:
-          - es5-require:
-            RxDB.plugin(require('rxdb/plugins/${pluginKey}'))
-          - es6-import:
-            import ${ucfirst(pluginKey)}Plugin from 'rxdb/plugins/${pluginKey}';
-            RxDB.plugin(${ucfirst(pluginKey)}Plugin);
-        `, {
-            pluginKey
-        }
-    );
-}
-
 // const errorKeySearchLink = key => 'https://github.com/pubkey/rxdb/search?q=' + key + '+path%3Asrc%2Fmodules';
 // const verboseErrorModuleLink = 'https://pubkey.github.io/rxdb/custom-builds.html#verbose-error';
 
 export function newRxError(
     code: string,
-    parameters?: any
+    parameters?: RxErrorParameters
 ): RxError {
     return new RxError(
         code,
@@ -131,7 +112,7 @@ export function newRxError(
 }
 export function newRxTypeError(
     code: string,
-    parameters?: any
+    parameters?: RxErrorParameters
 ): RxTypeError {
     return new RxTypeError(
         code,

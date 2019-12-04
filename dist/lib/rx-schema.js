@@ -9,6 +9,7 @@ exports.getEncryptedPaths = getEncryptedPaths;
 exports.hasCrypt = hasCrypt;
 exports.getIndexes = getIndexes;
 exports.getPrimary = getPrimary;
+exports.getPreviousVersions = getPreviousVersions;
 exports.getFinalFields = getFinalFields;
 exports.normalize = normalize;
 exports.createRxSchema = createRxSchema;
@@ -100,7 +101,7 @@ function () {
   ;
 
   _proto.validate = function validate(_obj, _schemaPath) {
-    throw (0, _rxError.pluginMissing)('validate');
+    throw (0, _util.pluginMissing)('validate');
   }
   /**
    * fills all unset fields with default-values if set
@@ -161,18 +162,6 @@ function () {
     key: "version",
     get: function get() {
       return this.jsonID.version;
-    }
-    /**
-     * array with previous version-numbers
-     */
-
-  }, {
-    key: "previousVersions",
-    get: function get() {
-      var c = 0;
-      return new Array(this.version).fill(0).map(function () {
-        return c++;
-      });
     }
   }, {
     key: "crypt",
@@ -310,6 +299,18 @@ function getPrimary(jsonID) {
     return jsonID.properties[key].primary;
   }).shift();
   if (!ret) return '_id';else return ret;
+}
+/**
+ * array with previous version-numbers
+ */
+
+
+function getPreviousVersions(schema) {
+  var version = schema.version ? schema.version : 0;
+  var c = 0;
+  return new Array(version).fill(0).map(function () {
+    return c++;
+  });
 }
 /**
  * returns the final-fields of the schema

@@ -8,9 +8,9 @@ import _asyncToGenerator from "@babel/runtime/helpers/asyncToGenerator";
 import { BehaviorSubject, Subject } from 'rxjs';
 import { first, filter } from 'rxjs/operators';
 import GraphQLClient from 'graphql-client';
-import { promiseWait } from '../../util';
+import { promiseWait, flatClone } from '../../util';
 import Core from '../../core';
-import { hash, clone } from '../../util';
+import { hash } from '../../util';
 import { DEFAULT_MODIFIER, wasRevisionfromPullReplication, createRevisionForPulledDocument, getDocsWithRevisionsFromPouch } from './helper';
 import { setLastPushSequence, getLastPullDocument, setLastPullDocument, getChangesSinceLastPushSequence } from './crawling-checkpoint';
 import RxDBWatchForChangesPlugin from '../watch-for-changes';
@@ -548,7 +548,7 @@ function () {
                * we create the event and emit it,
                * so other instances get informed about it
                */
-              originalDoc = clone(toPouch);
+              originalDoc = flatClone(toPouch);
               originalDoc._deleted = deletedValue;
               delete originalDoc[this.deletedFlag];
               originalDoc._rev = newRevision;
@@ -572,7 +572,10 @@ function () {
 
   _proto.cancel = function cancel() {
     if (this.isStopped()) return Promise.resolve(false);
-    if (this.changesSub) this.changesSub.cancel();
+
+    this._subs.forEach(function (sub) {
+      return sub.unsubscribe();
+    });
 
     this._subjects.canceled.next(true); // TODO
 
@@ -662,18 +665,21 @@ export function syncGraphQL(_ref2) {
       }
 
       if (push) {
-        replicationState.changesSub = collection.pouch.changes({
-          since: 'now',
-          live: true,
-          include_docs: true
-        }).on('change', function (change) {
+        /**
+         * we have to use the rxdb changestream
+         * because the pouchdb.changes stream sometimes
+         * does not emit events or stucks
+         */
+        var changeEventsSub = collection.$.subscribe(function (changeEvent) {
           if (replicationState.isStopped()) return;
-          var rev = change.doc._rev;
+          var rev = changeEvent.data.v._rev;
 
-          if (!wasRevisionfromPullReplication(replicationState.endpointHash, rev)) {
+          if (rev && !wasRevisionfromPullReplication(replicationState.endpointHash, rev)) {
             replicationState.run();
           }
         });
+
+        replicationState._subs.push(changeEventsSub);
       }
     }
   });

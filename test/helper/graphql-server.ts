@@ -15,11 +15,25 @@ import { createServer } from 'http';
 import { SubscriptionServer } from 'subscriptions-transport-ws';
 
 const express = require('express');
+// we need cors because this server is also used in browser-tests
+const cors = require('cors');
 const graphqlHTTP = require('express-graphql');
 
-let lastPort = 16121;
+import {
+    GRAPHQL_PATH,
+    GRAPHQL_SUBSCRIPTION_PATH
+} from './graphql-config';
 
-function sortByUpdatedAtAndPrimary(a: any, b: any): 0 | 1 | -1 {
+let lastPort = 16121;
+export function getPort() {
+    lastPort = lastPort + 1;
+    return lastPort;
+}
+
+function sortByUpdatedAtAndPrimary(
+    a: any,
+    b: any
+): 0 | 1 | -1 {
     if (a.updatedAt > b.updatedAt) return 1;
     if (a.updatedAt < b.updatedAt) return -1;
 
@@ -31,9 +45,28 @@ function sortByUpdatedAtAndPrimary(a: any, b: any): 0 | 1 | -1 {
     return 0;
 }
 
-export async function spawn(documents: any[] = []) {
+export interface GraphqlServer<T> {
+    port: number;
+    wsPort: number;
+    subServer: any;
+    client: any;
+    url: string;
+    setDocument(doc: T): Promise<{ data: any }>;
+    overwriteDocuments(docs: T[]): void;
+    getDocuments(): T[];
+    close(now?: boolean): void;
+}
+
+export interface GraphQLServerModule {
+    spawn<T>(docs?: T[]): Promise<GraphqlServer<T>>;
+}
+
+export async function spawn<T>(
+    documents: T[] = [],
+    port = getPort()
+): Promise<GraphqlServer<T>> {
     const app = express();
-    const port = lastPort++;
+    app.use(cors());
 
     /**
      * schema in graphql
@@ -43,6 +76,7 @@ export async function spawn(documents: any[] = []) {
         type Query {
             info: Int
             feedForRxDBReplication(lastId: String!, minUpdatedAt: Int!, limit: Int!): [Human!]!
+            getAll: [Human!]!
         }
         type Mutation {
             setHuman(human: HumanInput): Human
@@ -111,6 +145,9 @@ export async function spawn(documents: any[] = []) {
 */
             return limited;
         },
+        getAll: () => {
+            return documents;
+        },
         setHuman: (args: any) => {
             // console.log('## setHuman()');
             // console.dir(args);
@@ -128,21 +165,20 @@ export async function spawn(documents: any[] = []) {
             );
             return doc;
         },
-        humanChanged: pubsub.asyncIterator('humanChanged')
+        humanChanged: () => pubsub.asyncIterator('humanChanged')
     };
 
-    const path = '/graphql';
-    app.use(path, graphqlHTTP({
+    app.use(GRAPHQL_PATH, graphqlHTTP({
         schema: schema,
         rootValue: root,
         graphiql: true,
     }));
 
-    const ret = 'http://localhost:' + port + path;
+    const ret = 'http://localhost:' + port + GRAPHQL_PATH;
     const client = graphQlClient({
         url: ret
     });
-    return new Promise(res => {
+    const retServer: Promise<GraphqlServer<T>> = new Promise(res => {
         const server = app.listen(port, function () {
 
             const wsPort = port + 500;
@@ -155,14 +191,11 @@ export async function spawn(documents: any[] = []) {
                         execute,
                         subscribe,
                         schema,
-                        context: {
-                            pubsub,
-                        },
                         rootValue: root
-                    } as any, {
-                        server: ws,
-                        path: '/subscriptions',
-                    }
+                    }, {
+                    server: ws,
+                    path: GRAPHQL_SUBSCRIPTION_PATH,
+                }
                 );
 
                 res({
@@ -182,8 +215,8 @@ export async function spawn(documents: any[] = []) {
               }
 
                         `, {
-                                human: doc
-                            }
+                            human: doc
+                        }
                         );
                         // console.dir(result);
                         return result;
@@ -212,4 +245,5 @@ export async function spawn(documents: any[] = []) {
             });
         });
     });
+    return retServer;
 }

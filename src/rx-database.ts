@@ -1,21 +1,18 @@
 import randomToken from 'random-token';
 import IdleQueue from 'custom-idle-queue';
-import BroadcastChannel from 'broadcast-channel';
+import { BroadcastChannel } from 'broadcast-channel';
 
 import {
     adapterObject,
     hash,
-    validateCouchDBString,
-    isLevelDown,
-    promiseWait
+    promiseWait,
+    pluginMissing
 } from './util';
 import {
-    newRxError,
-    pluginMissing
+    newRxError
 } from './rx-error';
 import {
-    createRxSchema,
-    RxSchema
+    createRxSchema
 } from './rx-schema';
 import {
     isInstanceOf as isInstanceOfRxChangeEvent,
@@ -36,7 +33,9 @@ import {
 } from 'rxjs/operators';
 
 import {
-    PouchDB
+    PouchDB,
+    validateCouchDBString,
+    isLevelDown
 } from './pouch-db';
 
 import {
@@ -763,10 +762,10 @@ function _internalAdminPouch(
         adapter,
         '_admin',
         0, {
-            // no compaction because this only stores local documents
-            auto_compaction: false,
-            revs_limit: 1
-        },
+        // no compaction because this only stores local documents
+        auto_compaction: false,
+        revs_limit: 1
+    },
         pouchSettingsFromRxDatabaseCreator
     );
 }

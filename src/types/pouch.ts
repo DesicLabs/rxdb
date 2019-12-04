@@ -19,6 +19,7 @@ export interface PouchReplicationOptions {
     back_off_function?: Function;
     checkpoint?: false | 'source' | 'target';
     include_docs?: boolean;
+    limit?: number;
 }
 
 /**
@@ -74,7 +75,11 @@ export declare class PouchDBInstance {
     bulkDocs(
         docs: { docs: any[] } | any[],
         options?: any
-    ): Promise<any>;
+    ): Promise<{
+        ok: boolean;
+        id: string;
+        rev: string;
+    }[]>;
 
     find(mangoQuery: any): Promise<{
         docs: any[]

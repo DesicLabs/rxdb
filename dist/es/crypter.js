@@ -2,8 +2,7 @@
  * handle the en/decryption of documents-data
  */
 import objectPath from 'object-path';
-import { clone } from './util';
-import { pluginMissing } from './rx-error';
+import { clone, pluginMissing } from './util';
 export var Crypter =
 /*#__PURE__*/
 function () {
@@ -35,8 +34,8 @@ function () {
   _proto.encrypt = function encrypt(obj) {
     var _this = this;
 
-    obj = clone(obj);
     if (!this.password) return obj;
+    obj = clone(obj);
     Object.keys(this.schema.encryptedPaths).forEach(function (path) {
       var value = objectPath.get(obj, path);
       if (typeof value === 'undefined') return;
@@ -51,8 +50,8 @@ function () {
   _proto.decrypt = function decrypt(obj) {
     var _this2 = this;
 
-    obj = clone(obj);
     if (!this.password) return obj;
+    obj = clone(obj);
     Object.keys(this.schema.encryptedPaths).forEach(function (path) {
       var value = objectPath.get(obj, path);
       if (typeof value === 'undefined') return;
