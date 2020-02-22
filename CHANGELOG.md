@@ -1,5 +1,15 @@
 # Changelog
 
+### 8.7.5 (6 January 2020)
+
+Other:
+  - Added a new example for electron with the remote API. Thanks [@SebastienWae](https://github.com/SebastienWae)
+  - Fixed Typing error on `database.dump()` [#1754](https://github.com/pubkey/rxdb/issues/1754). Thanks [@PVermeer](https://github.com/PVermeer)
+
+Bugfixes:
+  - Updates to documents fail with GraphQL replication. [#1812](https://github.com/pubkey/rxdb/issues/1812). Thanks [@gautambt](https://github.com/gautambt)
+  - `RxQuery.doesDocumentDataMatch()` was wrong on queries with `$and` which lead to a wrong result with QueryChangeDetection
+
 ### 8.7.4 (2 December 2019)
 
 Other:
