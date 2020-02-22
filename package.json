@@ -1,5 +1,5 @@
 {
-  "name": "rxdb",
+  "name": "@privicy/rxdb",
   "description": "A realtime Database for JavaScript Applications",
   "version": "8.7.5",
   "author": "pubkey",
