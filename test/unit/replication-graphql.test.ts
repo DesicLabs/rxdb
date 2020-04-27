@@ -118,6 +118,25 @@ describe('replication-graphql.test.js', () => {
                     return doc;
                 });
         };
+        const getTestDataWithRevisions = (amount: any) => {
+            return new Array(amount).fill(0)
+                .map(() => schemaObjects.humanWithTimestamp())
+                .map((doc: any) => {
+                    doc['deleted'] = false;
+                    const dataHash = util.hash(doc);
+
+                    const rev = `1-${dataHash}`;
+                    const revisions = {
+                        start: 1,
+                        ids: [dataHash]
+                    }
+
+                    doc._rev = rev;
+                    doc._revisions = revisions;
+
+                    return doc;
+                });
+        };
         config.parallel('graphql-server.js', () => {
             it('spawn, reach and close a server', async () => {
                 const server = await SpawnServer.spawn();
@@ -557,6 +576,7 @@ describe('replication-graphql.test.js', () => {
                     const changes = await getChangesSinceLastPushSequence(
                         c,
                         endpointHash,
+                        'last_pulled_rev',
                         10
                     );
                     assert.strictEqual(changes.results.length, amount);
@@ -571,6 +591,7 @@ describe('replication-graphql.test.js', () => {
                     const changes = await getChangesSinceLastPushSequence(
                         c,
                         endpointHash,
+                        'last_pulled_rev',
                         10
                     );
                     assert.strictEqual(changes.results.length, amount);
@@ -595,6 +616,7 @@ describe('replication-graphql.test.js', () => {
                     const changes = await getChangesSinceLastPushSequence(
                         c,
                         endpointHash,
+                        'last_pulled_rev',
                         10
                     );
                     assert.strictEqual(changes.results.length, amount);
@@ -633,6 +655,7 @@ describe('replication-graphql.test.js', () => {
                     const changes = await getChangesSinceLastPushSequence(
                         c,
                         endpointHash,
+                        'last_pulled_rev',
                         10
                     );
 
@@ -642,6 +665,66 @@ describe('replication-graphql.test.js', () => {
                     assert.strictEqual(changes.last_seq, amount + 1);
                     c.database.destroy();
                 });
+                it('should have filtered out docs with last_pulled_rev set', async () => {
+                    const amount = 5;
+                    const c = await humansCollection.createHumanWithTimestamp(amount);
+                    const toPouch: any = schemaObjects.humanWithTimestamp();
+                    toPouch._rev = `1-${util.hash(toPouch)}`;
+                    toPouch.last_pulled_rev = toPouch._rev;
+
+                    await c.pouch.bulkDocs([c._handleToPouch(toPouch)], {
+                        new_edits: false
+                    });
+
+                    const allDocs = await c.find().exec();
+                    assert.strictEqual(allDocs.length, amount + 1);
+
+                    const changes = await getChangesSinceLastPushSequence(
+                        c,
+                        endpointHash,
+                        'last_pulled_rev',
+                        10
+                    );
+
+                    assert.strictEqual(changes.results.length, amount);
+                    const shouldNotBeFound = changes.results.find((change: any) => change.id === toPouch.id);
+                    assert.ok(!shouldNotBeFound);
+                    assert.strictEqual(changes.last_seq, amount + 1);
+                    c.database.destroy();
+                });
+                it('should fetch revisions if syncRevisions is set to true', async () => {
+                    const amount = 5;
+                    const c = await humansCollection.createHumanWithTimestamp(amount);
+
+                    await c.find().update({
+                        $inc: {
+                            age: 1,
+                        }
+                    })
+
+                    const changes = await getChangesSinceLastPushSequence(
+                        c,
+                        endpointHash,
+                        'last_pulled_rev',
+                        10,
+                        true
+                    );
+                    assert.strictEqual(changes.results.length, amount);
+                    assert.ok(changes.results[0].doc.name);
+
+                    changes.results.forEach((result) => {
+                        const doc = result.doc;
+                        const revisions = doc._revisions;
+
+                        assert.ok(revisions);
+                        assert.ok(revisions.ids);
+                        assert.strictEqual(revisions.ids.length, 2)
+
+                        assert.strictEqual(doc._rev, `${revisions.start}-${revisions.ids[0]}`)
+                    })
+
+                    c.database.destroy();
+                })
             });
             describe('.setLastPullDocument()', () => {
                 it('should set the document', async () => {
@@ -726,7 +809,7 @@ describe('replication-graphql.test.js', () => {
                 server.close();
                 c.database.destroy();
             });
-            it('pulled docs should be marked with a special revision', async () => {
+            it('pulled docs should be marked with a special revision if syncRevisions is false', async () => {
                 const [c, server] = await Promise.all([
                     humansCollection.createHumanWithTimestamp(0),
                     SpawnServer.spawn(getTestData(batchSize))
@@ -737,7 +820,8 @@ describe('replication-graphql.test.js', () => {
                         queryBuilder
                     },
                     deletedFlag: 'deleted',
-                    live: false
+                    live: false,
+                    syncRevisions: false,
                 });
                 await replicationState.awaitInitialReplication();
 
@@ -761,6 +845,74 @@ describe('replication-graphql.test.js', () => {
                 server.close();
                 c.database.destroy();
             });
+            it('should sync revisions from server if syncRevisions is true', async () => {
+                const remoteDocs = getTestDataWithRevisions(batchSize);
+
+                const [c, server] = await Promise.all([
+                    humansCollection.createHumanWithTimestamp(0),
+                    SpawnServer.spawn(remoteDocs)
+                ]);
+
+                const queryBuilder = (doc: any) => {
+                    if (!doc) {
+                        doc = {
+                            id: '',
+                            updatedAt: 0
+                        };
+                    }
+                    const query = `{
+                  feedForRxDBReplication(lastId: "${doc.id}", minUpdatedAt: ${doc.updatedAt}, limit: ${batchSize}) {
+                      id
+                      name
+                      age
+                      updatedAt
+                      deleted
+                      _rev
+                      _revisions {
+                        start
+                        ids
+                      }
+                  }
+              }`;
+                    const variables = {};
+                    return {
+                        query,
+                        variables
+                    };
+                };
+
+                const replicationState = c.syncGraphQL({
+                    url: server.url,
+                    pull: {
+                        queryBuilder
+                    },
+                    deletedFlag: 'deleted',
+                    live: false,
+                    syncRevisions: true,
+                });
+                await replicationState.awaitInitialReplication();
+
+                const docIds = remoteDocs.map((doc) => {
+                    return {
+                        id: doc.id,
+                        rev: doc._rev
+                    }
+                });
+
+                const localDocs = await c.pouch.bulkGet({ docs: docIds, revs: true });
+
+                assert.strictEqual(localDocs.results.length, remoteDocs.length);
+
+                localDocs.results.forEach((doc) => {
+                    const remoteDoc = remoteDocs.find((d) => d.id == doc.id);
+                    assert.ok(remoteDoc);
+                    assert.ok(remoteDoc._rev, doc.docs[0].ok._rev);
+                    assert.deepEqual(doc.docs[0].ok._revisions, remoteDoc._revisions);
+                })
+                server.close();
+                c.database.destroy();
+            });
+
             it('should pull all documents in multiple batches', async () => {
                 const amount = batchSize * 4;
                 const testData = getTestData(amount);
@@ -1160,6 +1312,55 @@ describe('replication-graphql.test.js', () => {
 
                 server.close();
                 db.destroy();
+            });
+            it('should include revision fields if syncRevisions is set', async () => {
+                const [c, server] = await Promise.all([
+                    humansCollection.createHumanWithTimestamp(batchSize),
+                    SpawnServer.spawn()
+                ]);
+
+                const pushQueryBuilder = (doc: any) => {
+                    assert.ok(doc._rev);
+                    assert.ok(doc._revisions);
+
+                    delete doc._rev;
+                    delete doc._revisions;
+                    const query = `
+              mutation CreateHuman($human: HumanInput) {
+                  setHuman(human: $human) {
+                      id,
+                      updatedAt
+                  }
+              }
+              `;
+                    const variables = {
+                        human: doc
+                    };
+
+                    return {
+                        query,
+                        variables
+                    };
+                };
+
+                const replicationState = c.syncGraphQL({
+                    url: server.url,
+                    push: {
+                        batchSize,
+                        queryBuilder: pushQueryBuilder
+                    },
+                    live: false,
+                    deletedFlag: 'deleted',
+                    syncRevisions: true,
+                });
+
+                await replicationState.awaitInitialReplication();
+
+                const docsOnServer = server.getDocuments();
+                assert.strictEqual(docsOnServer.length, batchSize);
+
+                server.close();
+                c.database.destroy();
             });
         });
         config.parallel('push and pull', () => {
@@ -1828,6 +2029,36 @@ describe('replication-graphql.test.js', () => {
 
                 server.close();
                 db.destroy();
+            });
+            it('#2048 GraphQL .run() fires exponentially', async () => {
+                const c = await humansCollection.createHumanWithTimestamp(0);
+                const server = await SpawnServer.spawn(getTestData(1));
+
+                const replicationState = c.syncGraphQL({
+                    url: server.url,
+                    pull: {
+                        queryBuilder
+                    },
+                    live: true,
+                    deletedFlag: 'deleted'
+                });
+                assert.strictEqual(replicationState._runCount, 0);
+
+                // call run() many times
+                const amount = 100;
+                await Promise.all(
+                    new Array(amount).map(
+                        () => replicationState.run()
+                    )
+                );
+
+                await AsyncTestUtil.waitUntil(
+                    () => replicationState._runCount > 0
+                );
+                await AsyncTestUtil.wait(50);
+                assert.ok(replicationState._runCount < amount);
+
+                c.database.destroy();
             });
         });
     });
